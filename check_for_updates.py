@@ -1,65 +1,38 @@
 import requests
-import os
 import zipfile
-import sys
-import logging
+import io
 
-# Configurar logging
-logging.basicConfig(filename='app_debug.log', level=logging.DEBUG,
-                    format='%(asctime)s %(levelname)s %(message)s')
+REPO_URL = "https://api.github.com/repos/NakaoMD/sqlite-query-executor/releases/latest"
+CURRENT_VERSION = "1.0.0"  # Versão atual do aplicativo
+LATEST_VERSION = CURRENT_VERSION  # Variável global para armazenar a versão mais recente
 
-# URL para a API de Releases do GitHub
-repo = "NakaoMD/sqlite-query-executor"
-releases_url = f"https://api.github.com/repos/{repo}/releases/latest"
 
-# Caminho para o arquivo local de versão
-local_version_file = "version.txt"
-
-def get_latest_release_info():
-    logging.debug("Verificando informações do último release...")
-    response = requests.get(releases_url)
+def get_latest_release():
+    response = requests.get(REPO_URL)
     response.raise_for_status()
-    release_info = response.json()
-    return release_info
+    latest_release = response.json()
+    global LATEST_VERSION
+    LATEST_VERSION = latest_release["tag_name"]
+    return latest_release["tag_name"], latest_release["zipball_url"]
 
-def download_and_extract_zip(url, extract_to='.'):
-    logging.debug(f"Baixando atualização de {url}...")
-    response = requests.get(url, stream=True)
-    zip_path = os.path.join(extract_to, "update.zip")
-    with open(zip_path, 'wb') as f:
-        for chunk in response.iter_content(chunk_size=128):
-            f.write(chunk)
-    logging.debug("Extraindo atualização...")
-    with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-        zip_ref.extractall(extract_to)
-    os.remove(zip_path)
-    logging.debug("Atualização concluída.")
 
 def check_for_updates():
-    release_info = get_latest_release_info()
-    remote_version = release_info['tag_name']
-    logging.debug(f"Versão remota: {remote_version}")
+    latest_version, download_url = get_latest_release()
 
-    if os.path.exists(local_version_file):
-        with open(local_version_file, 'r') as f:
-            local_version = f.read().strip()
+    if latest_version != CURRENT_VERSION:
+        print(f"Nova versão disponível: {latest_version}. Atualizando...")
+        update_app(download_url)
+        return True
     else:
-        local_version = "0.0.0"
+        return False
 
-    logging.debug(f"Versão local: {local_version}")
 
-    if remote_version != local_version:
-        logging.debug("Nova versão disponível!")
-        asset = next(item for item in release_info['assets'] if item['name'] == 'query_executor.zip')
-        download_and_extract_zip(asset['browser_download_url'])
-        with open(local_version_file, 'w') as f:
-            f.write(remote_version)
-        logging.debug("Atualização concluída. Reinicie o aplicativo.")
-    else:
-        logging.debug("Você já está usando a versão mais recente.")
+def update_app(download_url):
+    # Baixar o arquivo zip da nova versão
+    response = requests.get(download_url)
+    with zipfile.ZipFile(io.BytesIO(response.content)) as z:
+        z.extractall()
 
-if __name__ == "__main__":
-    try:
-        check_for_updates()
-    except Exception as e:
-        logging.error(f"Erro ao verificar atualizações: {e}")
+    # Atualizar a versão atual
+    global CURRENT_VERSION
+    CURRENT_VERSION = LATEST_VERSION
