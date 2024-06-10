@@ -2,9 +2,7 @@ import tkinter as tk
 from tkinter import ttk
 from ui.utils import load_icon
 import requests
-
-# Dicionário para armazenar os resultados em cache
-cache = {}
+from data.state_manager import state_manager  # Importar o state_manager
 
 def display_category_buttons_pull_requests(parent_frame, categorized_repos, main_app):
     for widget in parent_frame.winfo_children():
@@ -53,7 +51,7 @@ def open_category_window_pull_requests(repos, category, main_app):
             widget.destroy()
 
         for repo in repos:
-            repo_label = ttk.Label(scrollable_frame, text=f"{repo[0]}: 0 pull requests abertos", image=pr_icon, compound=tk.LEFT)
+            repo_label = ttk.Label(scrollable_frame, text=f"{repo[0]}: {state_manager.get_pr_count(repo[1])} pull requests abertos", image=pr_icon, compound=tk.LEFT)
             repo_label.image = pr_icon  # Keep a reference to avoid garbage collection
             repo_label.pack(pady=5, anchor='w')
 
@@ -80,8 +78,8 @@ def open_category_window_pull_requests(repos, category, main_app):
     display_pull_requests()
 
 def get_pull_requests_count(repo_url):
-    if repo_url in cache:
-        return cache[repo_url]
+    if repo_url in state_manager.pull_request_cache:
+        return state_manager.pull_request_cache[repo_url]
 
     api_url = repo_url.replace("https://github.com/", "https://api.github.com/repos/") + "/pulls"
     try:
@@ -90,7 +88,7 @@ def get_pull_requests_count(repo_url):
         pr_count = len(response.json())
 
         # Armazena os resultados em cache
-        cache[repo_url] = pr_count
+        state_manager.set_pr_count(repo_url, pr_count)
         return pr_count
     except requests.RequestException as e:
         print(f"Erro ao buscar pull requests: {e}")

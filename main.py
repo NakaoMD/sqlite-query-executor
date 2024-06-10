@@ -1,5 +1,4 @@
-from ui.main_window import MainWindow
+from ui.login_window import create_login_window
 
 if __name__ == "__main__":
-    app = MainWindow("2.0.5")
-    app.mainloop()
+    create_login_window("2.0.5")

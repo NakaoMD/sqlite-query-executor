@@ -3,11 +3,15 @@ from tkinter import ttk, messagebox
 import pandas as pd
 from tkinter import filedialog
 from data.database import execute_query
-from ui.utils import load_icon
+from ui.utils import load_icon, ToolTip, add_button_feedback
 
-def create_data_tab(notebook):
-    data_frame = ttk.Frame(notebook)
-    notebook.add(data_frame, text="Dados")
+# Variáveis globais para paginação
+current_page = 0
+page_size = 10
+last_query_results = []
+
+def create_data_tab(data_frame):
+    global query_var, queries, data_tree, result_count_label
 
     query_var = tk.StringVar()
     query_label = ttk.Label(data_frame, text="Selecione uma consulta:")
@@ -24,8 +28,10 @@ def create_data_tab(notebook):
     query_combobox.pack(pady=5)
 
     execute_icon = load_icon("icons/play.png", (20, 20))
-    execute_button = ttk.Button(data_frame, text=" Executar", command=lambda: on_query_select(query_var.get(), queries, data_tree), image=execute_icon, compound=tk.LEFT)
+    execute_button = ttk.Button(data_frame, text=" Executar", command=lambda: on_query_select(query_var.get(), queries, data_tree, 0), image=execute_icon, compound=tk.LEFT)
     execute_button.pack(pady=10)
+    add_button_feedback(execute_button)  # Adiciona feedback visual ao botão
+    ToolTip(execute_button, text="Clique para executar a consulta selecionada")  # Adiciona tooltip
 
     search_frame = ttk.Frame(data_frame)
     search_frame.pack(pady=10)
@@ -37,12 +43,32 @@ def create_data_tab(notebook):
     id_entry.pack(side=tk.LEFT, padx=5)
 
     search_icon = load_icon("icons/search.png", (20, 20))
-    search_button = ttk.Button(search_frame, text=" Buscar", command=lambda: on_search_by_id(id_entry, data_tree), image=search_icon, compound=tk.LEFT)
+    search_button = ttk.Button(search_frame, text=" Buscar", command=lambda: on_search_by_id(id_entry, data_tree, 0), image=search_icon, compound=tk.LEFT)
     search_button.pack(side=tk.LEFT, padx=5)
+    add_button_feedback(search_button)  # Adiciona feedback visual ao botão
+    ToolTip(search_button, text="Digite um ID e clique para buscar")  # Adiciona tooltip
 
     save_icon = load_icon("icons/cloud-download.png", (20, 20))
     save_button = ttk.Button(data_frame, text=" Salvar em Excel", command=lambda: save_to_excel(last_query_results), image=save_icon, compound=tk.LEFT)
     save_button.pack(pady=10)
+    add_button_feedback(save_button)  # Adiciona feedback visual ao botão
+    ToolTip(save_button, text="Clique para salvar os resultados em um arquivo Excel")  # Adiciona tooltip
+
+    pagination_frame = ttk.Frame(data_frame)
+    pagination_frame.pack(pady=10)
+
+    prev_button = ttk.Button(pagination_frame, text="Anterior", command=lambda: change_page(-1))
+    prev_button.pack(side=tk.LEFT, padx=5)
+    add_button_feedback(prev_button)  # Adiciona feedback visual ao botão
+    ToolTip(prev_button, text="Clique para ver a página anterior")  # Adiciona tooltip
+
+    next_button = ttk.Button(pagination_frame, text="Próximo", command=lambda: change_page(1))
+    next_button.pack(side=tk.LEFT, padx=5)
+    add_button_feedback(next_button)  # Adiciona feedback visual ao botão
+    ToolTip(next_button, text="Clique para ver a próxima página")  # Adiciona tooltip
+
+    result_count_label = ttk.Label(data_frame, text="Total de Resultados: 0")
+    result_count_label.pack(pady=5)
 
     data_tree_frame = ttk.Frame(data_frame)
     data_tree_frame.pack(pady=10)
@@ -50,8 +76,7 @@ def create_data_tab(notebook):
     data_tree_scroll = ttk.Scrollbar(data_tree_frame)
     data_tree_scroll.pack(side=tk.RIGHT, fill=tk.Y)
 
-    data_tree = ttk.Treeview(data_tree_frame, columns=("ID", "First Name", "Last Name", "Age", "City"), show="headings",
-                             yscrollcommand=data_tree_scroll.set)
+    data_tree = ttk.Treeview(data_tree_frame, columns=("ID", "First Name", "Last Name", "Age", "City"), show="headings", yscrollcommand=data_tree_scroll.set)
     data_tree.pack()
 
     data_tree_scroll.config(command=data_tree.yview)
@@ -62,26 +87,42 @@ def create_data_tab(notebook):
     data_tree.heading("Age", text="Age")
     data_tree.heading("City", text="City")
 
-    global last_query_results
-    last_query_results = []
-
-def on_query_select(selected_query, queries, data_tree):
-    query = queries[selected_query]
+def on_query_select(selected_query, queries, data_tree, page):
+    global current_page, last_query_results, result_count_label
+    query = queries[selected_query] + f" LIMIT {page_size} OFFSET {page * page_size}"
     results = execute_query(query)
+    total_query = f"SELECT COUNT(*) FROM ({queries[selected_query]})"
+    total_results = execute_query(total_query)[0][0]
     display_results(data_tree, results)
-    global last_query_results
     last_query_results = results
+    current_page = page
+    result_count_label.config(text=f"Total de Resultados: {total_results}")
 
-def on_search_by_id(id_entry, data_tree):
+def on_search_by_id(id_entry, data_tree, page):
+    global current_page, last_query_results, result_count_label
     person_id = id_entry.get()
-    if person_id:
-        query = f"SELECT * FROM people WHERE id = {person_id}"
-        results = execute_query(query)
-        display_results(data_tree, results)
-        global last_query_results
-        last_query_results = results
-    else:
+    if not person_id.isdigit():
         messagebox.showwarning("Aviso", "Por favor, insira um ID válido.")
+        id_entry.config(background='red')
+        return
+    else:
+        id_entry.config(background='white')
+
+    query = f"SELECT * FROM people WHERE id = ? LIMIT {page_size} OFFSET {page * page_size}"
+    results = execute_query(query, (person_id,))
+    total_query = "SELECT COUNT(*) FROM people WHERE id = ?"
+    total_results = execute_query(total_query, (person_id,))[0][0]
+    display_results(data_tree, results)
+    last_query_results = results
+    current_page = page
+    result_count_label.config(text=f"Total de Resultados: {total_results}")
+
+def change_page(direction):
+    global current_page
+    current_page += direction
+    if current_page < 0:
+        current_page = 0
+    on_query_select(query_var.get(), queries, data_tree, current_page)
 
 def save_to_excel(results):
     if results:
